@@ -1,0 +1,120 @@
+'use server'
+
+import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+
+export async function createPost(formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) redirect('/login')
+
+  const title      = (formData.get('title') as string).trim()
+  const content    = (formData.get('content') as string | null)?.trim() || null
+  const categoryId = formData.get('category_id') as string
+
+  if (!title || title.length < 5) {
+    return { error: 'El título debe tener al menos 5 caracteres.' }
+  }
+
+  const { data: post, error } = await supabase
+    .from('posts')
+    .insert({ title, content, category_id: categoryId, user_id: user.id })
+    .select('id, categories(slug)')
+    .single()
+
+  if (error) return { error: 'Error al crear la publicación.' }
+
+  revalidatePath('/')
+  revalidatePath(`/c/${(post.categories as { slug: string }).slug}`)
+  redirect(`/post/${post.id}`)
+}
+
+export async function updatePost(postId: string, formData: FormData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) redirect('/login')
+
+  const title   = (formData.get('title') as string).trim()
+  const content = (formData.get('content') as string | null)?.trim() || null
+
+  if (!title || title.length < 5) {
+    return { error: 'El título debe tener al menos 5 caracteres.' }
+  }
+
+  const { error } = await supabase
+    .from('posts')
+    .update({ title, content })
+    .eq('id', postId)
+    .eq('user_id', user.id)
+
+  if (error) return { error: 'Error al actualizar la publicación.' }
+
+  revalidatePath(`/post/${postId}`)
+  redirect(`/post/${postId}`)
+}
+
+export async function deletePost(postId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) redirect('/login')
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('is_admin')
+    .eq('id', user.id)
+    .single()
+
+  const { data: post } = await supabase
+    .from('posts')
+    .select('user_id, categories(slug)')
+    .eq('id', postId)
+    .single()
+
+  if (!post) return { error: 'Publicación no encontrada.' }
+
+  const isOwner = post.user_id === user.id
+  const isAdmin = profile?.is_admin
+
+  if (!isOwner && !isAdmin) return { error: 'Sin permiso para eliminar.' }
+
+  await supabase
+    .from('posts')
+    .update({ is_deleted: true })
+    .eq('id', postId)
+
+  revalidatePath('/')
+  revalidatePath(`/c/${(post.categories as { slug: string }).slug}`)
+  redirect(`/c/${(post.categories as { slug: string }).slug}`)
+}
+
+export async function votePost(postId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) return { error: 'Debes iniciar sesión para votar.' }
+
+  const { data: existing } = await supabase
+    .from('post_votes')
+    .select('id, vote_type')
+    .eq('user_id', user.id)
+    .eq('post_id', postId)
+    .single()
+
+  if (existing) {
+    await supabase
+      .from('post_votes')
+      .delete()
+      .eq('id', existing.id)
+  } else {
+    await supabase
+      .from('post_votes')
+      .insert({ user_id: user.id, post_id: postId, vote_type: 1 })
+  }
+
+  revalidatePath(`/post/${postId}`)
+  return { success: true }
+}
