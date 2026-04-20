@@ -26,8 +26,9 @@ export async function createPost(formData: FormData) {
 
   if (error) return { error: 'Error al crear la publicación.' }
 
+  const categorySlug = (post.categories as unknown as { slug: string }).slug
   revalidatePath('/')
-  revalidatePath(`/c/${(post.categories as { slug: string }).slug}`)
+  revalidatePath(`/c/${categorySlug}`)
   redirect(`/post/${post.id}`)
 }
 
@@ -86,9 +87,10 @@ export async function deletePost(postId: string) {
     .update({ is_deleted: true })
     .eq('id', postId)
 
+  const slug = (post.categories as unknown as { slug: string }).slug
   revalidatePath('/')
-  revalidatePath(`/c/${(post.categories as { slug: string }).slug}`)
-  redirect(`/c/${(post.categories as { slug: string }).slug}`)
+  revalidatePath(`/c/${slug}`)
+  redirect(`/c/${slug}`)
 }
 
 export async function votePost(postId: string) {
