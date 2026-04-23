@@ -42,7 +42,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
 
   const { data: posts } = await supabase
     .from('posts')
-    .select('*, profiles(id, username), categories(id, name, slug, icon)')
+    .select('*, profiles(id, username, avatar_url), categories(id, name, slug, icon)')
     .eq('category_id', category.id)
     .eq('is_deleted', false)
     .order(sort === 'popular' ? 'upvotes' : 'created_at', { ascending: false })

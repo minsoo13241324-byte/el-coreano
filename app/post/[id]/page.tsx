@@ -35,7 +35,7 @@ export default async function PostPage({ params }: Props) {
   const [{ data: comments }, { data: profile }] = await Promise.all([
     supabase
       .from('comments')
-      .select('*, profiles(id, username)')
+      .select('*, profiles(id, username, avatar_url)')
       .eq('post_id', id)
       .order('created_at', { ascending: true }),
     user

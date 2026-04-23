@@ -20,7 +20,7 @@ export default async function ProfilePage() {
     supabase.from('profiles').select('*').eq('id', user.id).single(),
     supabase
       .from('posts')
-      .select('*, profiles(id, username), categories(id, name, slug, icon)')
+      .select('*, profiles(id, username, avatar_url), categories(id, name, slug, icon)')
       .eq('user_id', user.id)
       .eq('is_deleted', false)
       .order('created_at', { ascending: false })

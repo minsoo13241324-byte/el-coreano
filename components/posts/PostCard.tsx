@@ -3,6 +3,7 @@ import { MessageSquare } from 'lucide-react'
 import { Post } from '@/types'
 import { timeAgo } from '@/lib/utils'
 import { VoteButton } from './VoteButton'
+import { Avatar } from '@/components/ui/Avatar'
 
 interface Props {
   post: Post
@@ -37,6 +38,7 @@ export function PostCard({ post, userId }: Props) {
               {category.icon} {category.name}
             </Link>
             <span className="text-slate-300">·</span>
+            <Avatar username={author.username} avatarUrl={(author as any).avatar_url ?? null} size="sm" />
             <span>{author.username}</span>
             <span className="text-slate-300">·</span>
             <span>{timeAgo(post.created_at)}</span>

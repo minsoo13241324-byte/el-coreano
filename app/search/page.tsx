@@ -21,7 +21,7 @@ export default async function SearchPage({ searchParams }: Props) {
   if (query.length >= 2) {
     const { data } = await supabase
       .from('posts')
-      .select('*, profiles(id, username), categories(id, name, slug, icon)')
+      .select('*, profiles(id, username, avatar_url), categories(id, name, slug, icon)')
       .eq('is_deleted', false)
       .ilike('title', `%${query}%`)
       .order('created_at', { ascending: false })

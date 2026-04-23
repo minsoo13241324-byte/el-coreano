@@ -61,7 +61,11 @@ export function CommentItem({ comment, postId, currentUserId, isAdmin, depth = 0
       <div className="flex-1 min-w-0">
         {/* Avatar + meta */}
         <div className="flex items-center gap-2 mb-2">
-          <Avatar username={comment.profiles?.username ?? '?'} size="sm" />
+          <Avatar
+            username={comment.profiles?.username ?? '?'}
+            avatarUrl={(comment.profiles as any)?.avatar_url ?? null}
+            size="sm"
+          />
           <span className="text-sm font-semibold text-slate-800">
             {comment.profiles?.username ?? 'usuario'}
           </span>
