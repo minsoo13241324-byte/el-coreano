@@ -1,141 +1,108 @@
 import { createClient } from '@/lib/supabase/server'
-import { PostCard } from '@/components/posts/PostCard'
-import { Sidebar } from '@/components/layout/Sidebar'
-import { TrendingUp, Clock, BookOpen, Users, MessageCircle } from 'lucide-react'
-import Link from 'next/link'
+import { LeftNav } from '@/components/layout/LeftNav'
+import { PortalSection } from '@/components/layout/PortalSection'
+import { RightPanel } from '@/components/layout/RightPanel'
 import type { Post, Category } from '@/types'
 
 export const revalidate = 60
 
-export default async function HomePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ sort?: string }>
-}) {
-  const { sort = 'reciente' } = await searchParams
+export default async function HomePage() {
   const supabase = await createClient()
 
-  const [{ data: { user } }, { data: posts }, { data: categories }] = await Promise.all([
+  const [{ data: { user } }, { data: categories }, { data: allPosts }] = await Promise.all([
     supabase.auth.getUser(),
+    supabase.from('categories').select('*').order('name'),
     supabase
       .from('posts')
       .select('*, profiles(id, username, avatar_url), categories(id, name, slug, icon)')
       .eq('is_deleted', false)
-      .order(sort === 'popular' ? 'upvotes' : 'created_at', { ascending: false })
-      .limit(50),
-    supabase.from('categories').select('*').order('name'),
+      .order('created_at', { ascending: false })
+      .limit(100),
   ])
 
-  let votedPostIds = new Set<string>()
-  if (user) {
-    const { data: votes } = await supabase
-      .from('post_votes')
-      .select('post_id')
-      .eq('user_id', user.id)
-    votedPostIds = new Set(votes?.map(v => v.post_id) ?? [])
+  // Popular posts for right panel (top 7 by upvotes)
+  const popularPosts: Post[] = [...(allPosts ?? [])]
+    .sort((a, b) => (b.upvotes ?? 0) - (a.upvotes ?? 0))
+    .slice(0, 7)
+
+  // Group posts by category, keep latest 7 per category
+  const cats = (categories as Category[]) ?? []
+  const postsByCategory: Record<string, Post[]> = {}
+  for (const cat of cats) {
+    postsByCategory[cat.id] = (allPosts ?? [])
+      .filter(p => p.category_id === cat.id)
+      .slice(0, 7)
   }
 
-  const enriched: Post[] = (posts ?? []).map(p => ({
-    ...p,
-    user_vote: votedPostIds.has(p.id) ? 1 : null,
-  }))
+  // Recent posts section (across all categories, latest 10)
+  const recentPosts: Post[] = (allPosts ?? []).slice(0, 10)
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
+    <div className="max-w-[1100px] mx-auto px-3 py-3">
+      <div className="grid grid-cols-[180px_1fr_200px] gap-3">
 
-      {/* Welcome banner — solo para usuarios no logueados */}
-      {!user && (
-        <div className="relative overflow-hidden bg-gradient-to-br from-k-red via-red-500 to-k-blue rounded-2xl p-8 text-white shadow-lg">
-          <div className="absolute top-0 right-0 text-[140px] opacity-10 leading-none select-none pointer-events-none -mt-4 -mr-4">
-            한
-          </div>
-          <div className="relative z-10 max-w-lg">
-            <p className="text-sm font-semibold uppercase tracking-widest opacity-80 mb-2">
-              Bienvenido a
-            </p>
-            <h1 className="text-3xl font-bold leading-tight mb-3">
-              El Coreano 🇰🇷
-            </h1>
-            <p className="text-white/80 text-sm leading-relaxed mb-6">
-              La comunidad en español para aprender el idioma coreano, explorar K-POP, K-Dramas y la cultura de Corea.
-            </p>
-            <div className="flex items-center gap-3 flex-wrap">
-              <Link
-                href="/signup"
-                className="bg-white text-k-red font-bold px-5 py-2.5 rounded-xl hover:bg-red-50 transition-colors shadow-sm text-sm"
-              >
-                Únete gratis
-              </Link>
-              <Link
-                href="/c/alfabeto-coreano"
-                className="bg-white/20 text-white font-medium px-5 py-2.5 rounded-xl hover:bg-white/30 transition-colors text-sm border border-white/30"
-              >
-                Explorar →
-              </Link>
-            </div>
-          </div>
+        {/* Left: category nav */}
+        <LeftNav categories={cats} />
 
-          {/* Stats row */}
-          <div className="relative z-10 flex gap-6 mt-8 pt-6 border-t border-white/20">
-            {[
-              { icon: BookOpen,      label: 'Categorías',    value: categories?.length ?? 10 },
-              { icon: MessageCircle, label: 'Publicaciones', value: posts?.length ?? 0 },
-              { icon: Users,         label: 'Comunidad',     value: 'Gratis' },
-            ].map(s => (
-              <div key={s.label} className="flex items-center gap-2">
-                <s.icon size={15} className="opacity-70" />
-                <span className="text-sm">
-                  <span className="font-bold">{s.value}</span>{' '}
-                  <span className="opacity-70">{s.label}</span>
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+        {/* Center: multi-section feed */}
+        <main className="space-y-3 min-w-0">
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
-        <section>
-          {/* Sort tabs */}
-          <div className="flex gap-1 mb-4 bg-white rounded-xl border border-slate-200 shadow-card p-1 w-fit">
-            {[
-              { label: 'Reciente', value: 'reciente', icon: Clock },
-              { label: 'Popular',  value: 'popular',  icon: TrendingUp },
-            ].map(tab => (
-              <a
-                key={tab.value}
-                href={`/?sort=${tab.value}`}
-                className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-all ${
-                  sort === tab.value
-                    ? 'bg-k-red text-white shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                <tab.icon size={13} />
-                {tab.label}
+          {/* Recent across all boards */}
+          <div className="bg-white border border-gray-200 rounded overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+              <span className="font-bold text-sm text-gray-800">🕒 Reciente</span>
+              <a href="/?sort=reciente" className="text-xs text-gray-400 hover:text-k-red transition-colors">
+                더보기 &rsaquo;
               </a>
-            ))}
+            </div>
+            <ul className="divide-y divide-gray-100">
+              {recentPosts.length === 0 ? (
+                <li className="px-3 py-4 text-xs text-gray-400 text-center">
+                  Aún no hay publicaciones.
+                </li>
+              ) : recentPosts.map(post => {
+                const cat = post.categories!
+                return (
+                  <li key={post.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-blue-50 group transition-colors">
+                    <a
+                      href={`/c/${cat.slug}`}
+                      className="flex-shrink-0 text-xs text-gray-400 hover:text-k-red transition-colors hidden sm:block w-[90px] truncate"
+                    >
+                      {cat.icon} {cat.name}
+                    </a>
+                    <a
+                      href={`/post/${post.id}`}
+                      className="flex-1 min-w-0 text-xs text-gray-800 group-hover:text-k-red transition-colors line-clamp-1"
+                    >
+                      {post.title}
+                    </a>
+                    <span className="flex-shrink-0 text-xs text-gray-400 hidden sm:block">
+                      {post.profiles?.username}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
           </div>
 
-          {enriched.length === 0 ? (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-card p-12 text-center">
-              <p className="text-4xl mb-3">🌱</p>
-              <p className="text-slate-700 font-semibold">¡Sé el primero en publicar!</p>
-              <p className="text-sm text-slate-400 mt-1">La comunidad te está esperando.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {enriched.map(post => (
-                <PostCard key={post.id} post={post} userId={user?.id ?? null} />
+          {/* One section per category (only categories that have posts) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {cats
+              .filter(cat => (postsByCategory[cat.id]?.length ?? 0) > 0)
+              .map(cat => (
+                <PortalSection
+                  key={cat.id}
+                  category={cat}
+                  posts={postsByCategory[cat.id] ?? []}
+                />
               ))}
-            </div>
-          )}
-        </section>
+          </div>
 
-        <Sidebar
-          categories={(categories as Category[]) ?? []}
-          isLoggedIn={!!user}
-        />
+        </main>
+
+        {/* Right: login box + popular */}
+        <RightPanel isLoggedIn={!!user} popularPosts={popularPosts} />
+
       </div>
     </div>
   )
