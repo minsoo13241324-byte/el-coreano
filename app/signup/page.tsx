@@ -6,14 +6,23 @@ import { signup } from '@/actions/auth'
 import { Button } from '@/components/ui/Button'
 
 export default function SignupPage() {
-  const [error, setError]     = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
-  const [, startTransition]   = useTransition()
+  const [error, setError]       = useState<string | null>(null)
+  const [success, setSuccess]   = useState(false)
+  const [, startTransition]     = useTransition()
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError(null)
-    const fd = new FormData(e.currentTarget)
+
+    const fd       = new FormData(e.currentTarget)
+    const password = fd.get('password') as string
+    const confirm  = fd.get('confirm_password') as string
+
+    if (password !== confirm) {
+      setError('Las contraseñas no coinciden.')
+      return
+    }
+
     startTransition(async () => {
       const result = await signup(fd)
       if (result?.error) {
@@ -44,7 +53,6 @@ export default function SignupPage() {
   return (
     <div className="min-h-[85vh] flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-
         <div className="bg-white rounded-2xl border border-slate-200 shadow-card p-8">
 
           <div className="text-center mb-8">
@@ -71,7 +79,7 @@ export default function SignupPage() {
                 className="input-base"
               />
               <p className="text-xs text-slate-400 mt-1">
-                3–20 caracteres · Solo letras, números y guión bajo
+                3–20 caracteres · solo letras, números y _
               </p>
             </div>
 
@@ -100,6 +108,21 @@ export default function SignupPage() {
                 minLength={8}
                 autoComplete="new-password"
                 placeholder="Mínimo 8 caracteres"
+                className="input-base"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Confirmar contraseña
+              </label>
+              <input
+                name="confirm_password"
+                type="password"
+                required
+                minLength={8}
+                autoComplete="new-password"
+                placeholder="Repite tu contraseña"
                 className="input-base"
               />
             </div>

@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { PostCard } from '@/components/posts/PostCard'
-import { Avatar } from '@/components/ui/Avatar'
+import { AvatarUpload } from '@/components/profile/AvatarUpload'
 import { EditUsernameForm } from '@/components/profile/EditUsernameForm'
 import { timeAgo } from '@/lib/utils'
 import { PlusCircle } from 'lucide-react'
@@ -48,9 +48,11 @@ export default async function ProfilePage() {
         <div className="h-20 bg-gradient-to-br from-k-red via-red-400 to-k-blue" />
         <div className="px-6 pb-6">
           <div className="flex items-end gap-4 -mt-8 mb-4">
-            <div className="ring-4 ring-white rounded-2xl shadow-md">
-              <Avatar username={profile?.username ?? '?'} size="lg" />
-            </div>
+            <AvatarUpload
+              userId={user.id}
+              username={profile?.username ?? '?'}
+              currentAvatarUrl={profile?.avatar_url ?? null}
+            />
           </div>
 
           <EditUsernameForm currentUsername={profile?.username ?? ''} />
@@ -59,7 +61,6 @@ export default async function ProfilePage() {
             Miembro desde {profile ? timeAgo(profile.created_at) : ''}
           </p>
 
-          {/* Stats */}
           <div className="flex gap-6 mt-4 pt-4 border-t border-slate-100">
             <div>
               <p className="text-xl font-bold text-slate-900">{enriched.length}</p>
