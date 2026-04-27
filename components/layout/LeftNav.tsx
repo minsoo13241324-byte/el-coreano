@@ -1,12 +1,20 @@
+'use client'
+
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { Category } from '@/types'
 
 interface Props {
   categories: Category[]
-  activeSlug?: string
 }
 
-export function LeftNav({ categories, activeSlug }: Props) {
+export function LeftNav({ categories }: Props) {
+  const pathname = usePathname()
+
+  // /c/some-slug 형태에서 slug 추출
+  const match = pathname.match(/^\/c\/([^/]+)/)
+  const activeSlug = match ? match[1] : null
+
   return (
     <nav className="space-y-2 sticky top-[46px] self-start">
       <div className="bg-white border border-gray-200 rounded overflow-hidden">
@@ -17,7 +25,11 @@ export function LeftNav({ categories, activeSlug }: Props) {
           <li>
             <Link
               href="/"
-              className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-blue-50 text-gray-700 hover:text-blue-700 transition-colors"
+              className={`flex items-center gap-2 px-3 py-1.5 text-sm transition-colors ${
+                pathname === '/'
+                  ? 'bg-blue-50 text-blue-700 font-bold border-l-2 border-blue-600'
+                  : 'hover:bg-blue-50 text-gray-700 hover:text-blue-700'
+              }`}
             >
               🏠 <span className="text-xs">Inicio</span>
             </Link>
@@ -54,8 +66,8 @@ export function LeftNav({ categories, activeSlug }: Props) {
         <ul className="py-1">
           {[
             { href: '/?sort=reciente', label: '🕒 Reciente' },
-            { href: '/?sort=popular',  label: '🔥 Popular' },
-            { href: '/search',         label: '🔍 Buscar' },
+            { href: '/?sort=popular',  label: '🔥 Popular'  },
+            { href: '/search',         label: '🔍 Buscar'   },
           ].map(link => (
             <li key={link.href}>
               <Link
