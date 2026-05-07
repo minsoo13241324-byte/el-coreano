@@ -26,6 +26,9 @@ export type Post = {
   category_id: string
   upvotes: number
   comment_count: number
+  view_count: number
+  image_urls: string[]
+  is_pinned: boolean
   is_deleted: boolean
   created_at: string
   updated_at: string

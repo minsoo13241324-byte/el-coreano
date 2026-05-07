@@ -2,154 +2,165 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
+import { ScrollToTop } from '@/components/posts/ScrollToTop'
+import { ViewCounter } from '@/components/posts/ViewCounter'
+import { PinButton } from '@/components/posts/PinButton'
+import { CategoryPostList } from '@/components/posts/CategoryPostList'
+import { DeletePostButton } from '@/components/posts/DeletePostButton'
 import { CommentList } from '@/components/comments/CommentList'
 import { CommentForm } from '@/components/comments/CommentForm'
 import { VoteButton } from '@/components/posts/VoteButton'
 import { Avatar } from '@/components/ui/Avatar'
 import { timeAgo } from '@/lib/utils'
-import { Pencil, ChevronRight, MessageSquare, ArrowUpIcon } from 'lucide-react'
-import type { Comment } from '@/types'
-import { DeletePostButton } from '@/components/posts/DeletePostButton'
-import { ViewCounter } from '@/components/posts/ViewCounter'
-import { PinButton } from '@/components/posts/PinButton'
-
-interface Props {
-  params: Promise<{ id: string }>
-}
+import { Pencil, ChevronRight, MessageSquare } from 'lucide-react'
+import type { Comment, Post, Category } from '@/types'
 
 export const revalidate = 0
 
+const PAGE_SIZE = 20
+
+interface Props {
+  params: Promise<{ slug: string; postId: string }>
+  searchParams: Promise<{ sort?: string; page?: string }>
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { id }   = await params
-  const supabase = await createClient()
+  const { postId } = await params
+  const supabase   = await createClient()
   const { data: post } = await supabase
     .from('posts')
-    .select('title, content, categories(name)')
-    .eq('id', id)
+    .select('title, content')
+    .eq('id', postId)
     .eq('is_deleted', false)
     .single()
 
   if (!post) return { title: 'El Coreano' }
 
-  const description = post.content?.slice(0, 160) ?? `Publicación en El Coreano`
+  const description = post.content?.slice(0, 160) ?? 'Publicación en El Coreano'
 
   return {
     title: post.title,
     description,
-    openGraph: {
-      title: post.title,
-      description,
-      type: 'article',
-      siteName: 'El Coreano',
-    },
-    twitter: {
-      card: 'summary',
-      title: post.title,
-      description,
-    },
+    openGraph: { title: post.title, description, type: 'article', siteName: 'El Coreano' },
+    twitter: { card: 'summary', title: post.title, description },
   }
 }
 
-export default async function PostPage({ params }: Props) {
-  const { id }   = await params
-  const supabase = await createClient()
+export default async function PostInCategoryPage({ params, searchParams }: Props) {
+  const { slug, postId }                             = await params
+  const { sort = 'reciente', page: pageParam = '1' } = await searchParams
+  const page                                         = Math.max(1, parseInt(pageParam, 10) || 1)
+  const supabase                                     = await createClient()
 
-  const [{ data: post }, { data: { user } }] = await Promise.all([
+  // 1차: category + user 병렬
+  const [{ data: category }, { data: { user } }] = await Promise.all([
+    supabase.from('categories').select('*').eq('slug', slug).single(),
+    supabase.auth.getUser(),
+  ])
+
+  if (!category) notFound()
+
+  const start = (page - 1) * PAGE_SIZE
+  const end   = start + PAGE_SIZE - 1
+
+  // 2차: 게시글 상세 + 목록 + 프로필 병렬
+  const [
+    { data: post },
+    { data: listPosts, count },
+    { data: profile },
+  ] = await Promise.all([
     supabase
       .from('posts')
-      .select('*, profiles(id, username), categories(id, name, slug, icon)')
-      .eq('id', id)
+      .select('*, profiles(id, username, avatar_url), categories(id, name, slug, icon)')
+      .eq('id', postId)
       .eq('is_deleted', false)
       .single(),
-    supabase.auth.getUser(),
+    supabase
+      .from('posts')
+      .select('*, profiles(id, username, avatar_url), categories(id, name, slug, icon)', { count: 'exact' })
+      .eq('category_id', category.id)
+      .eq('is_deleted', false)
+      .order('is_pinned', { ascending: false })
+      .order(sort === 'popular' ? 'upvotes' : 'created_at', { ascending: false })
+      .range(start, end),
+    user
+      ? supabase.from('profiles').select('is_admin, username').eq('id', user.id).single()
+      : Promise.resolve({ data: null }),
   ])
 
   if (!post) notFound()
 
-  const category = post.categories as { id: string; name: string; slug: string; icon: string }
-
-  const [{ data: comments }, { data: profile }, { data: relatedPosts }] = await Promise.all([
+  // 3차: 댓글 + 투표 병렬
+  const [{ data: comments }, { data: allVotes }] = await Promise.all([
     supabase
       .from('comments')
       .select('*, profiles(id, username, avatar_url)')
-      .eq('post_id', id)
+      .eq('post_id', postId)
       .order('created_at', { ascending: true }),
     user
-      ? supabase.from('profiles').select('is_admin, username').eq('id', user.id).single()
-      : Promise.resolve({ data: null }),
-    supabase
-      .from('posts')
-      .select('id, title, upvotes, comment_count, created_at, profiles(username)')
-      .eq('category_id', category.id)
-      .eq('is_deleted', false)
-      .neq('id', id)
-      .order('created_at', { ascending: false })
-      .limit(5),
+      ? supabase.from('post_votes').select('post_id, vote_type').eq('user_id', user.id)
+      : Promise.resolve({ data: [] }),
   ])
 
-  let userVote = null
-  if (user) {
-    const { data: vote } = await supabase
-      .from('post_votes')
-      .select('vote_type')
-      .eq('user_id', user.id)
-      .eq('post_id', id)
-      .single()
-    userVote = vote?.vote_type ?? null
-  }
+  const userPostVote = (allVotes ?? []).find(v => v.post_id === postId)?.vote_type ?? null
+  const votedIds     = new Set((allVotes ?? []).map(v => v.post_id))
 
-  const isOwner = user?.id === post.user_id
-  const isAdmin = profile?.is_admin ?? false
-  const author  = post.profiles as { id: string; username: string }
-  const myUsername = (profile as { username?: string } | null)?.username ?? ''
+  const enrichedList: Post[] = (listPosts ?? []).map(p => ({
+    ...p,
+    user_vote: votedIds.has(p.id) ? 1 : null,
+  }))
+
+  const totalPages  = Math.ceil((count ?? 0) / PAGE_SIZE)
+  const isOwner     = user?.id === post.user_id
+  const isAdmin     = (profile as { is_admin?: boolean } | null)?.is_admin ?? false
+  const catData     = post.categories as { id: string; name: string; slug: string; icon: string }
+  const author      = post.profiles as { id: string; username: string; avatar_url: string | null }
+  const myUsername  = (profile as { username?: string } | null)?.username ?? ''
 
   return (
-    <div className="max-w-3xl mx-auto px-3 sm:px-4 py-3 sm:py-6 space-y-4">
-      <ViewCounter postId={id} />
+    <div className="space-y-3">
+      <ScrollToTop />
+      <ViewCounter postId={postId} />
 
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-slate-500">
-        <Link href="/" className="hover:text-slate-700 transition-colors">Inicio</Link>
-        <ChevronRight size={14} className="text-slate-300" />
-        <Link
-          href={`/c/${category.slug}`}
-          className="flex items-center gap-1 font-medium text-k-red hover:text-k-red-dark transition-colors"
-        >
-          {category.icon} {category.name}
-        </Link>
-      </nav>
-
-      {/* Post */}
+      {/* 게시글 상세 */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-card overflow-hidden">
-        {/* Top bar con upvote */}
+        {/* Breadcrumb */}
+        <nav className="flex items-center gap-1.5 text-sm text-slate-500 px-5 pt-4">
+          <Link href="/" className="hover:text-slate-700 transition-colors">Inicio</Link>
+          <ChevronRight size={14} className="text-slate-300" />
+          <Link
+            href={`/c/${slug}`}
+            className="flex items-center gap-1 font-medium text-k-red hover:text-k-red-dark transition-colors"
+          >
+            {catData.icon} {catData.name}
+          </Link>
+        </nav>
+
         <div className="flex items-stretch">
           {/* Vote sidebar */}
           <div className="flex flex-col items-center justify-start pt-5 px-3 bg-slate-50 border-r border-slate-100 min-w-[52px]">
             <VoteButton
               postId={post.id}
               initialUpvotes={post.upvotes}
-              initialVoted={userVote === 1}
+              initialVoted={userPostVote === 1}
               userId={user?.id ?? null}
             />
           </div>
 
-          {/* Main content */}
+          {/* 본문 */}
           <div className="flex-1 p-6 min-w-0">
-            {/* Author row */}
             <div className="flex items-center gap-2 mb-4">
-              <Avatar username={author.username} size="sm" />
+              <Avatar username={author.username} avatarUrl={author.avatar_url} size="sm" />
               <div className="text-sm">
                 <span className="font-semibold text-slate-800">{author.username}</span>
                 <span className="text-slate-400 ml-2">{timeAgo(post.created_at)}</span>
               </div>
             </div>
 
-            {/* Title */}
             <h1 className="text-2xl font-bold text-slate-900 leading-snug tracking-tight">
               {post.title}
             </h1>
 
-            {/* Content */}
             {post.content && (
               <div className="mt-4 text-slate-600 text-[15px] leading-relaxed whitespace-pre-wrap">
                 {post.content}
@@ -174,16 +185,14 @@ export default async function PostPage({ params }: Props) {
               </div>
             )}
 
-            {/* Footer actions */}
             <div className="flex items-center gap-2 mt-6 pt-4 border-t border-slate-100">
               <span className="flex items-center gap-1.5 text-xs text-slate-400">
                 <MessageSquare size={13} />
                 {post.comment_count} comentarios
               </span>
-
               {(isOwner || isAdmin) && (
                 <div className="flex items-center gap-1 ml-auto">
-                  {isAdmin && <PinButton postId={id} isPinned={post.is_pinned ?? false} />}
+                  {isAdmin && <PinButton postId={postId} isPinned={post.is_pinned ?? false} />}
                   {isOwner && (
                     <Link
                       href={`/post/${post.id}/edit`}
@@ -193,7 +202,7 @@ export default async function PostPage({ params }: Props) {
                       Editar
                     </Link>
                   )}
-                  <DeletePostButton postId={id} />
+                  <DeletePostButton postId={postId} />
                 </div>
               )}
             </div>
@@ -201,7 +210,7 @@ export default async function PostPage({ params }: Props) {
         </div>
       </div>
 
-      {/* Comments */}
+      {/* 댓글 */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-card p-6">
         <h2 className="font-bold text-slate-900 mb-5 flex items-center gap-2">
           <MessageSquare size={17} className="text-k-red" />
@@ -217,7 +226,7 @@ export default async function PostPage({ params }: Props) {
                 <span className="font-semibold text-slate-800">{myUsername || author.username}</span>
               </span>
             </div>
-            <CommentForm postId={id} />
+            <CommentForm postId={postId} />
           </div>
         ) : (
           <div className="mb-6 pb-6 border-b border-slate-100">
@@ -234,55 +243,24 @@ export default async function PostPage({ params }: Props) {
 
         <CommentList
           comments={(comments as Comment[]) ?? []}
-          postId={id}
+          postId={postId}
           currentUserId={user?.id ?? null}
           isAdmin={isAdmin}
         />
       </div>
 
-      {/* 같은 카테고리 다른 글 */}
-      {(relatedPosts ?? []).length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-card overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
-            <h3 className="font-bold text-sm text-slate-800 flex items-center gap-1.5">
-              {category.icon} Más en {category.name}
-            </h3>
-            <Link
-              href={`/c/${category.slug}`}
-              className="text-xs text-k-red hover:underline font-medium"
-            >
-              Ver todo →
-            </Link>
-          </div>
-          <ul className="divide-y divide-slate-100">
-            {(relatedPosts ?? []).map(p => {
-              const a = p.profiles as unknown as { username: string } | null
-              return (
-                <li key={p.id}>
-                  <Link
-                    href={`/post/${p.id}`}
-                    className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors group"
-                  >
-                    <span className="flex items-center gap-0.5 text-xs text-slate-400 w-10 flex-shrink-0">
-                      <ArrowUpIcon size={11} />
-                      {p.upvotes}
-                    </span>
-                    <span className="flex-1 min-w-0 text-sm text-slate-800 group-hover:text-k-red transition-colors line-clamp-1 font-medium">
-                      {p.title}
-                    </span>
-                    <span className="flex-shrink-0 text-xs text-slate-400 hidden sm:block">
-                      {a?.username}
-                    </span>
-                    <span className="flex-shrink-0 text-xs text-slate-400">
-                      {timeAgo(p.created_at)}
-                    </span>
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      )}
+      {/* 같은 카테고리 게시글 목록 */}
+      <CategoryPostList
+        category={category as Category}
+        posts={enrichedList}
+        slug={slug}
+        userId={user?.id ?? null}
+        selectedPostId={postId}
+        currentPage={page}
+        totalPages={totalPages}
+        sort={sort}
+        paginationBase={`/c/${slug}/post/${postId}`}
+      />
     </div>
   )
 }

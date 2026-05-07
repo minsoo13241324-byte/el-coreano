@@ -13,6 +13,8 @@ export async function createPost(formData: FormData) {
   const title      = (formData.get('title') as string).trim()
   const content    = (formData.get('content') as string | null)?.trim() || null
   const categoryId = formData.get('category_id') as string
+  const imageUrlsRaw = formData.get('image_urls') as string | null
+  const imageUrls  = imageUrlsRaw ? (JSON.parse(imageUrlsRaw) as string[]) : []
 
   if (!title || title.length < 5) {
     return { error: 'El título debe tener al menos 5 caracteres.' }
@@ -20,7 +22,7 @@ export async function createPost(formData: FormData) {
 
   const { data: post, error } = await supabase
     .from('posts')
-    .insert({ title, content, category_id: categoryId, user_id: user.id })
+    .insert({ title, content, category_id: categoryId, user_id: user.id, image_urls: imageUrls })
     .select('id, categories(slug)')
     .single()
 
@@ -29,7 +31,7 @@ export async function createPost(formData: FormData) {
   const categorySlug = (post.categories as unknown as { slug: string }).slug
   revalidatePath('/')
   revalidatePath(`/c/${categorySlug}`)
-  redirect(`/post/${post.id}`)
+  redirect(`/c/${categorySlug}/post/${post.id}`)
 }
 
 export async function updatePost(postId: string, formData: FormData) {
@@ -38,16 +40,21 @@ export async function updatePost(postId: string, formData: FormData) {
 
   if (!user) redirect('/login')
 
-  const title   = (formData.get('title') as string).trim()
-  const content = (formData.get('content') as string | null)?.trim() || null
+  const title        = (formData.get('title') as string).trim()
+  const content      = (formData.get('content') as string | null)?.trim() || null
+  const imageUrlsRaw = formData.get('image_urls') as string | null
+  const imageUrls    = imageUrlsRaw ? (JSON.parse(imageUrlsRaw) as string[]) : undefined
 
   if (!title || title.length < 5) {
     return { error: 'El título debe tener al menos 5 caracteres.' }
   }
 
+  const update: Record<string, unknown> = { title, content }
+  if (imageUrls !== undefined) update.image_urls = imageUrls
+
   const { error } = await supabase
     .from('posts')
-    .update({ title, content })
+    .update(update)
     .eq('id', postId)
     .eq('user_id', user.id)
 
@@ -55,6 +62,42 @@ export async function updatePost(postId: string, formData: FormData) {
 
   revalidatePath(`/post/${postId}`)
   redirect(`/post/${postId}`)
+}
+
+export async function incrementViewCount(postId: string) {
+  const supabase = await createClient()
+  await supabase.rpc('increment_view_count', { post_id: postId })
+}
+
+export async function togglePinPost(postId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autorizado' }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('is_admin')
+    .eq('id', user.id)
+    .single()
+  if (!profile?.is_admin) return { error: 'No autorizado' }
+
+  const { data: post } = await supabase
+    .from('posts')
+    .select('is_pinned, categories(slug)')
+    .eq('id', postId)
+    .single()
+  if (!post) return { error: 'No encontrado' }
+
+  await supabase
+    .from('posts')
+    .update({ is_pinned: !(post.is_pinned ?? false) })
+    .eq('id', postId)
+
+  const slug = (post.categories as unknown as { slug: string }).slug
+  revalidatePath('/')
+  revalidatePath(`/c/${slug}`)
+  revalidatePath(`/post/${postId}`)
+  return { success: true }
 }
 
 export async function deletePost(postId: string) {

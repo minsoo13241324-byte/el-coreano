@@ -46,17 +46,21 @@ export function RightPanel({ isLoggedIn, popularPosts }: Props) {
             <h3 className="font-bold text-xs text-gray-500 uppercase tracking-wider">🔥 Popular</h3>
           </div>
           <ul className="py-1 divide-y divide-gray-100">
-            {popularPosts.map((post, i) => (
-              <li key={post.id} className="flex items-start gap-2 px-3 py-1.5 hover:bg-blue-50 group transition-colors">
-                <span className="flex-shrink-0 text-xs font-bold text-gray-300 w-4 pt-0.5">{i + 1}</span>
-                <Link
-                  href={`/post/${post.id}`}
-                  className="text-xs text-gray-700 group-hover:text-k-red transition-colors line-clamp-2 leading-relaxed"
-                >
-                  {post.title}
-                </Link>
-              </li>
-            ))}
+            {popularPosts.map((post, i) => {
+              const slug = (post as any).categories?.slug
+              const href = slug ? `/c/${slug}/post/${post.id}` : `/post/${post.id}`
+              return (
+                <li key={post.id} className="flex items-start gap-2 px-3 py-1.5 hover:bg-blue-50 group transition-colors">
+                  <span className="flex-shrink-0 text-xs font-bold text-gray-300 w-4 pt-0.5">{i + 1}</span>
+                  <Link
+                    href={href}
+                    className="text-xs text-gray-700 group-hover:text-k-red transition-colors line-clamp-2 leading-relaxed"
+                  >
+                    {post.title}
+                  </Link>
+                </li>
+              )
+            })}
           </ul>
         </div>
       )}

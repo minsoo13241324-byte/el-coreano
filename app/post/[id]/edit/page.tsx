@@ -36,6 +36,7 @@ export default async function EditPostPage({ params }: Props) {
           defaultTitle={post.title}
           defaultContent={post.content ?? ''}
           defaultCategoryId={post.category_id}
+          defaultImageUrls={post.image_urls ?? []}
         />
       </div>
     </div>

@@ -54,7 +54,7 @@ export default async function HomePage() {
                   {cat.icon} {cat.name}
                 </a>
                 <a
-                  href={`/post/${post.id}`}
+                  href={`/c/${cat.slug}/post/${post.id}`}
                   className="flex-1 min-w-0 text-xs text-gray-800 group-hover:text-k-red transition-colors line-clamp-1"
                 >
                   {post.title}

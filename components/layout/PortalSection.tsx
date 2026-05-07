@@ -48,7 +48,7 @@ export function PortalSection({ category, posts }: Props) {
 
               {/* Title */}
               <Link
-                href={`/post/${post.id}`}
+                href={`/c/${category.slug}/post/${post.id}`}
                 className="flex-1 min-w-0 text-xs text-gray-800 group-hover:text-k-red transition-colors line-clamp-1"
               >
                 {post.title}

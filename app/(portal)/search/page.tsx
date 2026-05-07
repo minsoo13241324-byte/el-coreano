@@ -68,9 +68,17 @@ export default async function SearchPage({ searchParams }: Props) {
           </p>
           {posts.length > 0 && (
             <div className="space-y-3">
-              {posts.map(post => (
-                <PostCard key={post.id} post={post} userId={user?.id ?? null} />
-              ))}
+              {posts.map(post => {
+                const slug = post.categories?.slug
+                return (
+                  <PostCard
+                    key={post.id}
+                    post={post}
+                    userId={user?.id ?? null}
+                    href={slug ? `/c/${slug}/post/${post.id}` : `/post/${post.id}`}
+                  />
+                )
+              })}
             </div>
           )}
         </>

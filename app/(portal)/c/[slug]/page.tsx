@@ -1,18 +1,19 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { PostCard } from '@/components/posts/PostCard'
-import { PlusCircle } from 'lucide-react'
-import Link from 'next/link'
+import { CategoryPostList } from '@/components/posts/CategoryPostList'
+import type { Metadata } from 'next'
 import type { Post, Category } from '@/types'
 
 export const revalidate = 60
 
+const PAGE_SIZE = 20
+
 interface Props {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ sort?: string }>
+  searchParams: Promise<{ sort?: string; page?: string }>
 }
 
-export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const supabase  = await createClient()
   const { data: cat } = await supabase
@@ -21,15 +22,26 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     .eq('slug', slug)
     .single()
 
-  return cat
-    ? { title: `${cat.name} – El Coreano`, description: cat.description }
-    : { title: 'El Coreano' }
+  if (!cat) return { title: 'El Coreano' }
+
+  return {
+    title: cat.name,
+    description: cat.description ?? undefined,
+    openGraph: {
+      title: `${cat.name} – El Coreano`,
+      description: cat.description ?? undefined,
+      siteName: 'El Coreano',
+      type: 'website',
+    },
+    twitter: { card: 'summary', title: `${cat.name} – El Coreano`, description: cat.description ?? undefined },
+  }
 }
 
 export default async function CategoryPage({ params, searchParams }: Props) {
-  const { slug }              = await params
-  const { sort = 'reciente' } = await searchParams
-  const supabase              = await createClient()
+  const { slug }                                    = await params
+  const { sort = 'reciente', page: pageParam = '1' } = await searchParams
+  const page                                        = Math.max(1, parseInt(pageParam, 10) || 1)
+  const supabase                                    = await createClient()
 
   const [{ data: category }, { data: { user } }] = await Promise.all([
     supabase.from('categories').select('*').eq('slug', slug).single(),
@@ -38,13 +50,17 @@ export default async function CategoryPage({ params, searchParams }: Props) {
 
   if (!category) notFound()
 
-  const { data: posts } = await supabase
+  const start = (page - 1) * PAGE_SIZE
+  const end   = start + PAGE_SIZE - 1
+
+  const { data: posts, count } = await supabase
     .from('posts')
-    .select('*, profiles(id, username, avatar_url), categories(id, name, slug, icon)')
+    .select('*, profiles(id, username, avatar_url), categories(id, name, slug, icon)', { count: 'exact' })
     .eq('category_id', category.id)
     .eq('is_deleted', false)
+    .order('is_pinned', { ascending: false })
     .order(sort === 'popular' ? 'upvotes' : 'created_at', { ascending: false })
-    .limit(50)
+    .range(start, end)
 
   let votedPostIds = new Set<string>()
   if (user) {
@@ -60,65 +76,18 @@ export default async function CategoryPage({ params, searchParams }: Props) {
     user_vote: votedPostIds.has(p.id) ? 1 : null,
   }))
 
+  const totalPages = Math.ceil((count ?? 0) / PAGE_SIZE)
+
   return (
-    <div className="space-y-3">
-      {/* 카테고리 헤더 */}
-      <div className="bg-white rounded border border-gray-200 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-              <span>{(category as Category).icon}</span>
-              {(category as Category).name}
-            </h1>
-            {(category as Category).description && (
-              <p className="text-sm text-gray-500 mt-1">{(category as Category).description}</p>
-            )}
-          </div>
-          <Link
-            href={user ? `/c/${slug}/submit` : '/login'}
-            className="flex items-center gap-1.5 bg-k-red text-white text-sm font-medium px-3 py-1.5 rounded hover:bg-k-red-dark transition-colors flex-shrink-0"
-          >
-            <PlusCircle size={14} />
-            Publicar
-          </Link>
-        </div>
-      </div>
-
-      {/* 정렬 탭 */}
-      <div className="flex gap-1 bg-white rounded border border-gray-200 p-1 w-fit">
-        {[{ label: 'Reciente', value: 'reciente' }, { label: 'Popular', value: 'popular' }].map(tab => (
-          <a
-            key={tab.value}
-            href={`/c/${slug}?sort=${tab.value}`}
-            className={`px-4 py-1.5 text-sm rounded font-medium transition-colors ${
-              sort === tab.value ? 'bg-k-red text-white' : 'text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            {tab.label}
-          </a>
-        ))}
-      </div>
-
-      {/* 글 목록 */}
-      {enriched.length === 0 ? (
-        <div className="bg-white rounded border border-gray-200 p-8 text-center">
-          <p className="text-4xl mb-2">🌱</p>
-          <p className="text-gray-500 mb-3">Aún no hay publicaciones en esta categoría.</p>
-          <Link
-            href={user ? `/c/${slug}/submit` : '/login'}
-            className="inline-flex items-center gap-1.5 bg-k-red text-white text-sm font-medium px-4 py-2 rounded hover:bg-k-red-dark"
-          >
-            <PlusCircle size={14} />
-            Crear la primera publicación
-          </Link>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {enriched.map(post => (
-            <PostCard key={post.id} post={post} userId={user?.id ?? null} />
-          ))}
-        </div>
-      )}
-    </div>
+    <CategoryPostList
+      category={category as Category}
+      posts={enriched}
+      slug={slug}
+      userId={user?.id ?? null}
+      currentPage={page}
+      totalPages={totalPages}
+      sort={sort}
+      paginationBase={`/c/${slug}`}
+    />
   )
 }
